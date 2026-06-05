@@ -1,2 +1,12 @@
-export { default } from './notion-sync';
 import { fetchPublishedReleasesFromNotion } from './notion-sync.js';
+
+export default async function handler(_req: any, res: any) {
+  try {
+    const releases = await fetchPublishedReleasesFromNotion();
+    res.status(200).json({ source: 'notion', releases });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}

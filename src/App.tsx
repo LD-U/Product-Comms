@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, ExternalLink, Filter, Megaphone, Moon, Search, Sparkles, Sun } from 'lucide-react';
-import type { Release } from './types';
-import { groupBySequencing, priorityExplanation } from './lib/timeline';
+import { ArrowRight, ChevronDown, ExternalLink, Filter, Home, ListChecks, Megaphone, Moon, Search, Sparkles, Sun } from 'lucide-react';
+import type { ReactNode } from 'react';
+import type { Release, Sequencing } from './types';
+import { priorityExplanation } from './lib/timeline';
 
-
-type PageView = 'roadmap' | 'suite';
+type PageView = 'home' | 'sales';
+type RoadmapTab = Sequencing;
 
 const suiteProducts = [
   {
@@ -47,8 +48,7 @@ const workflowStages = [
   { label: 'Production', products: ['Solutions DGR'], note: 'Category assignment, pricing, tags, and retail readiness' },
   { label: 'Inventory', products: ['Solutions DGR', 'Upright Link'], note: 'Stock visibility, movement, storage, and cycling' },
   { label: 'Retail', products: ['Solutions DGR'], note: 'POS, payments, promotions, loyalty, and sales' },
-  { label: 'E-commerce', products: ['Upright Lister', 'Upright Link', 'pearldive'], note: 'Listing, photography, fulfillment, and shipping' },
-  { label: 'Insights', products: ['Solutions DGR', 'Upright Lister', 'pearldive'], note: 'Sales, productivity, inventory, and predictive data' }
+  { label: 'E-commerce', products: ['Upright Lister', 'Upright Link', 'pearldive'], note: 'Listing, photography, fulfillment, and shipping' }
 ];
 
 const buyerOutcomes = [
@@ -59,66 +59,252 @@ const buyerOutcomes = [
   { buyer: 'Frontline staff', outcome: 'Task-specific tools for intake, sorting, production, checkout, listing, packing, and shipping.' }
 ];
 
+const sequenceTabs: Array<{ sequence: RoadmapTab; label: string; eyebrow: string }> = [
+  { sequence: 1, label: 'Soon', eyebrow: 'Sequence 1' },
+  { sequence: 2, label: 'Next', eyebrow: 'Sequence 2' },
+  { sequence: 3, label: 'Later', eyebrow: 'Sequence 3' }
+];
 
-
-function Badge({ children, tone = 'default' }: { children: React.ReactNode; tone?: 'default' | 'strong' | 'soft' | 'warning' }) {
+function Badge({ children, tone = 'default' }: { children: ReactNode; tone?: 'default' | 'strong' | 'soft' | 'warning' }) {
   return <span className={`badge badge-${tone}`}>{children}</span>;
 }
 
-function ReleaseCard({ release, primary = false }: { release: Release; primary?: boolean }) {
+function sortReleases(releases: Release[]) {
+  return [...releases].sort((a, b) => {
+    if (a.sequencing !== b.sequencing) return a.sequencing - b.sequencing;
+    const dateA = a.targetDate || a.targetWindow || '';
+    const dateB = b.targetDate || b.targetWindow || '';
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function isEcommerceRelease(release: Release) {
+  const text = [release.product, release.productArea, ...release.workflowChanging, ...release.affectedScreens].join(' ').toLowerCase();
+  return text.includes('e-commerce') || text.includes('ecommerce') || text.includes('lister') || text.includes('link') || text.includes('marketplace') || text.includes('shipping') || text.includes('fulfillment');
+}
+
+function isRetailRelease(release: Release) {
+  const text = [release.product, release.productArea, ...release.workflowChanging, ...release.affectedScreens].join(' ').toLowerCase();
+  return text.includes('retail') || text.includes('pos') || text.includes('donation') || text.includes('production') || text.includes('dgr') || text.includes('store');
+}
+
+function ReleaseCard({ release, primary = false, expanded, onToggle }: { release: Release; primary?: boolean; expanded: boolean; onToggle: () => void }) {
+  const detailId = `release-details-${release.id}`;
+
   return (
-    <article id={`release-${release.id}`} className={`release-card ${primary ? 'release-card-primary' : ''}`}>
-      <div className="release-card-topline">
-        <div>
-          <p className="release-area">{release.product || release.productArea}</p>
-          <h3>{release.name}</h3>
+    <article id={`release-${release.id}`} className={`release-card ${primary ? 'release-card-primary' : ''} ${expanded ? 'is-expanded' : ''}`}>
+      <button
+        type="button"
+        className="release-card-summary"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls={detailId}
+      >
+        <div className="release-card-topline">
+          <div>
+            <p className="release-area">{release.product || release.productArea}</p>
+            <h3>{release.name}</h3>
+          </div>
+          <Badge tone={release.confidence === 'Delayed' ? 'warning' : primary ? 'strong' : 'default'}>{release.targetWindow}</Badge>
         </div>
-        <Badge tone={release.confidence === 'Delayed' ? 'warning' : primary ? 'strong' : 'default'}>{release.targetWindow}</Badge>
-      </div>
 
-      <p className="impact">{release.customerImpact}</p>
+        <p className="impact">{release.customerImpact}</p>
 
-      <div className="answer-grid">
-        <div>
-          <span>Why it matters</span>
-          <p>{release.whyItMatters}</p>
+        <div className="benefits-row compact-benefits" aria-label="Key benefits">
+          {release.operationalBenefits.slice(0, 3).map((benefit) => <Badge key={benefit} tone="soft">{benefit}</Badge>)}
         </div>
-        <div>
-          <span>Who it impacts</span>
-          <p>{release.whoImpacted.join(', ')}</p>
-        </div>
-        <div>
-          <span>Workflows changing</span>
-          <p>{release.workflowChanging.join(', ')}</p>
-        </div>
-        <div>
-          <span>Affected screens</span>
-          <p>{release.affectedScreens.join(', ')}</p>
-        </div>
-      </div>
 
-      <div className="benefits-row">
-        {release.operationalBenefits.map((benefit) => <Badge key={benefit} tone="soft">{benefit}</Badge>)}
-      </div>
+        <span className="expand-hint">
+          {expanded ? 'Hide details' : 'View details'}
+          <ChevronDown size={16} />
+        </span>
+      </button>
 
-      <div className="talking-points">
-        <div className="section-label"><Megaphone size={16} /> CS/Sales talking points</div>
-        <ul>
-          {release.talkingPoints.map((point) => <li key={point}>{point}</li>)}
-        </ul>
-      </div>
+      {expanded && (
+        <div id={detailId} className="release-expanded-content">
+          <div className="answer-grid">
+            <div>
+              <span>Why it matters</span>
+              <p>{release.whyItMatters}</p>
+            </div>
+            <div>
+              <span>Who it impacts</span>
+              <p>{release.whoImpacted.join(', ')}</p>
+            </div>
+            <div>
+              <span>Workflows changing</span>
+              <p>{release.workflowChanging.join(', ')}</p>
+            </div>
+            <div>
+              <span>Affected screens</span>
+              <p>{release.affectedScreens.join(', ')}</p>
+            </div>
+          </div>
 
-      <footer className="release-footer">
-        <span>{release.type}</span>
-        <span>{release.priority}: {priorityExplanation(release.priority)}</span>
-        {release.demoUrl ? <a href={release.demoUrl} target="_blank" rel="noopener noreferrer">Demo <ExternalLink size={14} /></a> : <span>Demo pending</span>}
-      </footer>
+          {release.operationalBenefits.length > 3 && (
+            <div className="benefits-row">
+              {release.operationalBenefits.slice(3).map((benefit) => <Badge key={benefit} tone="soft">{benefit}</Badge>)}
+            </div>
+          )}
+
+          <details className="talking-points">
+            <summary><span className="section-label"><Megaphone size={16} /> CS/Sales talking points</span></summary>
+            <ul>
+              {release.talkingPoints.map((point) => <li key={point}>{point}</li>)}
+            </ul>
+          </details>
+
+          <footer className="release-footer">
+            <span>{release.type}</span>
+            <span>{release.priority}: {priorityExplanation(release.priority)}</span>
+            {release.demoUrl ? <a href={release.demoUrl} target="_blank" rel="noopener noreferrer">Demo <ExternalLink size={14} /></a> : <span>Demo pending</span>}
+          </footer>
+        </div>
+      )}
     </article>
   );
 }
 
+function ProductVisionCard() {
+  return (
+    <section className="vision-card vision-card-expanded" aria-label="Product vision">
+      <p className="section-kicker">Product vision</p>
+      <h2>Unlock the value of unique secondhand goods through intelligent, purpose-built software.</h2>
+      <em>More Revenue Per Donation. More Mission Per Dollar.</em>
+    </section>
+  );
+}
 
-function CommerceProductSuiteOverview({ onOpenSuite }: { onOpenSuite: () => void }) {
+function NotionSyncStatus({ dataSource, syncWarning }: { dataSource: 'loading' | 'notion' | 'error'; syncWarning: string | null }) {
+  return (
+    <div className="source-banner compact-source" aria-live="polite">
+      <strong>{dataSource === 'notion' ? 'Live Notion data' : dataSource === 'loading' ? 'Loading' : 'Sync issue'}</strong>
+      <span>{dataSource === 'notion' ? 'Synced' : syncWarning ?? 'Checking API'}</span>
+    </div>
+  );
+}
+
+function SoonReleaseRail({ releases, onSelect }: { releases: Release[]; onSelect: (releaseId: string) => void }) {
+  const soon = sortReleases(releases.filter((release) => release.sequencing === 1));
+  const ecommerce = soon.filter(isEcommerceRelease);
+  const retail = soon.filter((release) => isRetailRelease(release) && !isEcommerceRelease(release));
+  const other = soon.filter((release) => !isEcommerceRelease(release) && !isRetailRelease(release));
+  const rows = [
+    { label: 'E-commerce', releases: ecommerce },
+    { label: 'Retail', releases: retail },
+    ...(other.length ? [{ label: 'Shared / Other', releases: other }] : [])
+  ];
+
+  return (
+    <section className="soon-rail-section" aria-label="Soon to be released">
+      <div className="section-heading-row">
+        <div>
+          <p className="section-kicker">Sequence 1</p>
+          <h2>Soon to be released</h2>
+        </div>
+        <span>{soon.length} upcoming items</span>
+      </div>
+      <div className="soon-release-rows">
+        {rows.map((row) => (
+          <div className="soon-release-row" key={row.label}>
+            <div className="soon-row-label">{row.label}</div>
+            <div className="soon-row-scroll">
+              {row.releases.length ? row.releases.map((release) => (
+                <button key={release.id} type="button" className="soon-pill" onClick={() => onSelect(release.id)}>
+                  <strong>{release.name}</strong>
+                  <span>{release.product || release.productArea} · {release.targetWindow}</span>
+                </button>
+              )) : <div className="soon-empty">No sequence 1 items</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ReleaseSummaryTable({ releases, activeTab, onTabChange, onSelect }: { releases: Release[]; activeTab: RoadmapTab; onTabChange: (tab: RoadmapTab) => void; onSelect: (releaseId: string) => void }) {
+  const tabReleases = sortReleases(releases.filter((release) => release.sequencing === activeTab));
+
+  return (
+    <section className="release-summary-table roadmap-tabs" aria-label="Roadmap table">
+      <div className="summary-table-heading">
+        <div>
+          <p>Release index</p>
+          <h2>Scan the roadmap first, then open details</h2>
+        </div>
+        <span>{tabReleases.length} releases shown</span>
+      </div>
+      <div className="roadmap-tab-list" role="tablist" aria-label="Roadmap sequence tabs">
+        {sequenceTabs.map((tab) => (
+          <button
+            key={tab.sequence}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.sequence}
+            className={activeTab === tab.sequence ? 'active' : ''}
+            onClick={() => onTabChange(tab.sequence)}
+          >
+            <span>{tab.eyebrow}</span>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div className="release-table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Release</th>
+              <th>Product</th>
+              <th>Window</th>
+              <th>Priority</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tabReleases.map((release) => (
+              <tr key={release.id} onClick={() => onSelect(release.id)}>
+                <td>{release.name}</td>
+                <td>{release.product || release.productArea}</td>
+                <td>{release.targetWindow}</td>
+                <td>{release.priority}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ReleaseScroll({ releases, activeTab, expandedReleaseId, onToggleRelease }: { releases: Release[]; activeTab: RoadmapTab; expandedReleaseId: string | null; onToggleRelease: (releaseId: string) => void }) {
+  const current = sortReleases(releases.filter((release) => release.sequencing === activeTab));
+  const tab = sequenceTabs.find((item) => item.sequence === activeTab) ?? sequenceTabs[0];
+
+  return (
+    <section className={`release-scroll-section sequence-${activeTab}`}>
+      <div className="section-heading-row">
+        <div>
+          <p className="section-kicker">{tab.eyebrow}</p>
+          <h2>{tab.label}</h2>
+        </div>
+      </div>
+      <div className="release-scroll-grid">
+        {current.length ? current.map((release) => (
+          <ReleaseCard
+            key={release.id}
+            release={release}
+            primary={activeTab === 1}
+            expanded={expandedReleaseId === release.id}
+            onToggle={() => onToggleRelease(release.id)}
+          />
+        )) : <div className="empty-state">No published releases in this sequence.</div>}
+      </div>
+    </section>
+  );
+}
+
+function CommerceProductSuiteOverview() {
   return (
     <section className="suite-overview-card">
       <div className="suite-overview-copy">
@@ -130,15 +316,6 @@ function CommerceProductSuiteOverview({ onOpenSuite }: { onOpenSuite: () => void
         </span>
       </div>
 
-      <div className="suite-overview-flow" aria-label="Commerce product suite workflow">
-        {workflowStages.slice(0, 6).map((stage, index) => (
-          <div className="suite-flow-step" key={stage.label}>
-            <strong>{stage.label}</strong>
-            <span>{stage.products.join(' + ')}</span>
-            {index < 5 && <i aria-hidden="true">→</i>}
-          </div>
-        ))}
-      </div>
 
       <div className="suite-overview-products">
         {suiteProducts.map((product) => (
@@ -149,141 +326,45 @@ function CommerceProductSuiteOverview({ onOpenSuite }: { onOpenSuite: () => void
           </article>
         ))}
       </div>
-
-      <button type="button" className="suite-open-button" onClick={onOpenSuite}>
-        Open expanded product suite
-        <ArrowRight size={16} />
-      </button>
     </section>
   );
 }
 
-function CommerceProductSuitePage({ onBack }: { onBack: () => void }) {
+function CommerceProductSuiteDetails() {
   return (
-    <main className="suite-page">
-      <button type="button" className="suite-back-button" onClick={onBack}>
-        ← Back to release roadmap
-      </button>
-
-      <section className="suite-hero">
-        <p className="suite-kicker">Sales enablement</p>
-        <h1>Commerce Product Suite</h1>
-        <span>
-          Use this page to explain what Upright sells from a total product-suite perspective:
-          not disconnected tools, but the full lifecycle from donation to final sale.
-        </span>
-      </section>
-
-      <section className="suite-section">
+    <section className="suite-section suite-two-column">
+      <div>
         <div className="suite-section-heading">
-          <p>Platform story</p>
-          <h2>The lifecycle we help customers run</h2>
+          <p>How to sell it</p>
+          <h2>Workflow-first positioning</h2>
         </div>
+        <div className="suite-positioning-card">
+          <strong>Competitors sell tools. Upright sells the workflow.</strong>
+          <p>
+            A prospect may ask about POS, listing, inventory, or AI. The larger story is that each
+            capability connects to the same lifecycle: donation intake, item data capture, routing,
+            selling destination, fulfillment, and performance insight.
+          </p>
+        </div>
+      </div>
 
-        <div className="suite-workflow-map">
-          {workflowStages.map((stage, index) => (
-            <article key={stage.label} className="suite-workflow-stage">
-              <div className="suite-stage-number">{index + 1}</div>
-              <div>
-                <h3>{stage.label}</h3>
-                <p>{stage.note}</p>
-                <div className="suite-chip-row">
-                  {stage.products.map((product) => (
-                    <span key={product}>{product}</span>
-                  ))}
-                </div>
-              </div>
+      <div>
+        <div className="suite-section-heading">
+          <p>Buyer outcomes</p>
+          <h2>Translate products into business value</h2>
+        </div>
+        <div className="suite-buyer-list">
+          {buyerOutcomes.map((item) => (
+            <article key={item.buyer}>
+              <strong>{item.buyer}</strong>
+              <span>{item.outcome}</span>
             </article>
           ))}
         </div>
-      </section>
-
-      <section className="suite-section">
-        <div className="suite-section-heading">
-          <p>What we sell</p>
-          <h2>Product positioning guide</h2>
-        </div>
-
-        <div className="suite-product-grid">
-          {suiteProducts.map((product) => (
-            <article key={product.name} className={`suite-product-card ${product.colorClass}`}>
-              <p>{product.category}</p>
-              <h3>{product.name}</h3>
-              <span>{product.summary}</span>
-
-              <div className="suite-card-block">
-                <strong>Handles</strong>
-                <div className="suite-chip-row">
-                  {product.handles.map((item) => (
-                    <span key={item}>{item}</span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="suite-card-block">
-                <strong>Primary buyers</strong>
-                <div className="suite-chip-row">
-                  {product.buyers.map((buyer) => (
-                    <span key={buyer}>{buyer}</span>
-                  ))}
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="suite-section suite-two-column">
-        <div>
-          <div className="suite-section-heading">
-            <p>How to sell it</p>
-            <h2>Workflow-first positioning</h2>
-          </div>
-          <div className="suite-positioning-card">
-            <strong>Competitors sell tools. Upright sells the workflow.</strong>
-            <p>
-              A prospect may ask about POS, listing, inventory, or AI. The larger story is that
-              each capability connects to the same lifecycle: donation intake, item data capture,
-              routing, selling destination, fulfillment, and performance insight.
-            </p>
-          </div>
-        </div>
-
-        <div>
-          <div className="suite-section-heading">
-            <p>Buyer outcomes</p>
-            <h2>Translate products into business value</h2>
-          </div>
-          <div className="suite-buyer-list">
-            {buyerOutcomes.map((item) => (
-              <article key={item.buyer}>
-                <strong>{item.buyer}</strong>
-                <span>{item.outcome}</span>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="suite-section">
-        <div className="suite-section-heading">
-          <p>Cross-sell motion</p>
-          <h2>Natural expansion path</h2>
-        </div>
-
-        <div className="suite-expansion-path">
-          {['Solutions DGR', 'Inventory', 'Upright Lister', 'Upright Link', 'pearldive'].map((step, index) => (
-            <div key={step} className="suite-expansion-step">
-              <strong>{step}</strong>
-              {index < 4 && <ArrowRight size={18} />}
-            </div>
-          ))}
-        </div>
-      </section>
-    </main>
+      </div>
+    </section>
   );
 }
-
 
 function ThemeToggle({ theme, onToggle }: { theme: 'light' | 'dark'; onToggle: () => void }) {
   return (
@@ -294,21 +375,64 @@ function ThemeToggle({ theme, onToggle }: { theme: 'light' | 'dark'; onToggle: (
   );
 }
 
-function TimelineLane({ sequence, eyebrow, title, description, releases }: ReturnType<typeof groupBySequencing>[number]) {
-  const primary = sequence === 1;
+function AppNav({ pageView, onPageChange }: { pageView: PageView; onPageChange: (page: PageView) => void }) {
   return (
-    <section className={`timeline-lane sequence-${sequence}`}>
-      <div className="lane-header">
-        <div>
-          <p>{eyebrow}</p>
-          <h2>{title}</h2>
-          <span>{description}</span>
+    <nav className="app-nav" aria-label="Primary navigation">
+      <button type="button" className={pageView === 'home' ? 'active' : ''} onClick={() => onPageChange('home')}><Home size={16} /> Home</button>
+      <button type="button" className={pageView === 'sales' ? 'active' : ''} onClick={() => onPageChange('sales')}><ListChecks size={16} /> Sales Enablement</button>
+    </nav>
+  );
+}
+
+function HomePage({ releases, dataSource, syncWarning, query, setQuery, areaFilter, setAreaFilter, productAreas, activeRoadmapTab, setActiveRoadmapTab, expandedReleaseId, toggleRelease, openRelease, onOpenSales }: {
+  releases: Release[];
+  dataSource: 'loading' | 'notion' | 'error';
+  syncWarning: string | null;
+  query: string;
+  setQuery: (value: string) => void;
+  areaFilter: string;
+  setAreaFilter: (value: string) => void;
+  productAreas: string[];
+  activeRoadmapTab: RoadmapTab;
+  setActiveRoadmapTab: (tab: RoadmapTab) => void;
+  expandedReleaseId: string | null;
+  toggleRelease: (releaseId: string) => void;
+  openRelease: (releaseId: string) => void;
+  onOpenSales: () => void;
+}) {
+  return (
+    <main className="home-page dashboard-home">
+      <section className="home-hero hero-copy">
+        <div className="eyebrow"><Sparkles size={16} /> Commerce release communications</div>
+        <h1>Product release roadmap for sales and customer-facing teams.</h1>
+        <p>Scan upcoming releases, understand sequencing, and open project details from one focused dashboard.</p>
+        <div className="home-hero-actions">
+          <button type="button" className="primary-action" onClick={onOpenSales}>
+            View Product Vision <ArrowRight size={16} />
+          </button>
+          <NotionSyncStatus dataSource={dataSource} syncWarning={syncWarning} />
         </div>
-      </div>
-      <div className="lane-cards">
-        {releases.length ? releases.map((release) => <ReleaseCard key={release.id} release={release} primary={primary} />) : <div className="empty-state">No published releases in this sequence.</div>}
-      </div>
-    </section>
+      </section>
+
+      <section className="filters" aria-label="Release filters">
+        <div className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by customer impact, workflow, screen, or release" /></div>
+        <label><Filter size={16} /> Product<select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)}>{productAreas.map((option) => <option key={option}>{option}</option>)}</select></label>
+      </section>
+
+      <SoonReleaseRail releases={releases} onSelect={openRelease} />
+      <ReleaseSummaryTable releases={releases} activeTab={activeRoadmapTab} onTabChange={setActiveRoadmapTab} onSelect={openRelease} />
+      <ReleaseScroll releases={releases} activeTab={activeRoadmapTab} expandedReleaseId={expandedReleaseId} onToggleRelease={toggleRelease} />
+    </main>
+  );
+}
+
+function SalesEnablementPage() {
+  return (
+    <main className="sales-page">
+      <ProductVisionCard />
+      <CommerceProductSuiteOverview />
+      <CommerceProductSuiteDetails />
+    </main>
   );
 }
 
@@ -318,10 +442,12 @@ export function App() {
   const [releases, setReleases] = useState<Release[]>([]);
   const [dataSource, setDataSource] = useState<'loading' | 'notion' | 'error'>('loading');
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
-  const [pageView, setPageView] = useState<PageView>('roadmap');
+  const [pageView, setPageView] = useState<PageView>('home');
+  const [activeRoadmapTab, setActiveRoadmapTab] = useState<RoadmapTab>(1);
+  const [expandedReleaseId, setExpandedReleaseId] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    if (typeof window === 'undefined') return 'light';
-    return window.localStorage.getItem('product-dashboard-theme') === 'dark' ? 'dark' : 'light';
+    if (typeof window === 'undefined') return 'dark';
+    return window.localStorage.getItem('product-dashboard-theme') === 'light' ? 'light' : 'dark';
   });
 
   useEffect(() => {
@@ -357,72 +483,46 @@ export function App() {
   const productAreas = useMemo(() => ['All', ...Array.from(new Set(releases.map((release) => release.product || release.productArea)))], [releases]);
 
   const filteredReleases = useMemo(() => {
-    return releases.filter((release) => {
+    return sortReleases(releases.filter((release) => {
       const haystack = [release.name, release.product, release.productArea, release.customerImpact, release.whyItMatters, ...release.workflowChanging, ...release.affectedScreens, ...release.whoImpacted].join(' ').toLowerCase();
       return (!query || haystack.includes(query.toLowerCase()))
         && (areaFilter === 'All' || release.product === areaFilter || release.productArea === areaFilter);
-    });
+    }));
   }, [releases, query, areaFilter]);
 
-  const lanes = groupBySequencing(filteredReleases);
-  const sequenceOneReleases = filteredReleases.filter((release) => release.sequencing === 1);
+  function toggleRelease(releaseId: string) {
+    setExpandedReleaseId((current) => current === releaseId ? null : releaseId);
+  }
 
-  if (pageView === 'suite') {
-    return (
-      <>
-        <ThemeToggle theme={theme} onToggle={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} />
-        <CommerceProductSuitePage onBack={() => setPageView('roadmap')} />
-      </>
-    );
+  function openRelease(releaseId: string) {
+    setExpandedReleaseId(releaseId);
+    window.requestAnimationFrame(() => document.getElementById(`release-${releaseId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
   }
 
   return (
-    <main>
+    <>
       <ThemeToggle theme={theme} onToggle={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} />
-      <section className="hero">
-        <div className="hero-copy">
-          <div className="eyebrow"><Sparkles size={16} /> Commerce release communications</div>
-          <h1>Product Details</h1>
-          <p>
-            A customer-outcome-first dashboard for communicating what is changing, why it matters, who it impacts,
-            when it is coming, and how it improves customer workflows.
-          </p>
-          <div className="source-banner">
-            <strong>{dataSource === 'notion' ? 'Live Notion data' : dataSource === 'loading' ? 'Loading Notion data' : 'Notion sync error'}</strong>
-            <span>{dataSource === 'notion' ? 'This dashboard is synced from Notion records.' : syncWarning ?? 'Checking the local API route for Notion releases.'}</span>
-          </div>
-          <div className="vision-card">
-            <strong>Product vision</strong>
-            <span>Unlock the value of unique secondhand goods through intelligent, purpose-built software.</span>
-            <em>More Revenue Per Donation. More Mission Per Dollar.</em>
-          </div>
-        </div>
-        <aside className="priority-panel">
-          <p>Priority content</p>
-          <h2>Soon-to-release projects</h2>
-          <span>Projects sequenced first are listed here for quick access to their full cards below.</span>
-          <div className="priority-project-list">
-            {sequenceOneReleases.length ? sequenceOneReleases.map((release) => (
-              <a key={release.id} href={`#release-${release.id}`}>
-                <strong>{release.name}</strong>
-                <small>{release.product || release.productArea}</small>
-              </a>
-            )) : <div className="priority-empty">No sequence 1 projects match the current filters.</div>}
-          </div>
-        </aside>
-      </section>
-
-      <CommerceProductSuiteOverview onOpenSuite={() => setPageView('suite')} />
-
-      <section className="filters" aria-label="Release filters">
-        <div className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by customer impact, workflow, screen, or release" /></div>
-        <label><Filter size={16} /> Product<select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)}>{productAreas.map((option) => <option key={option}>{option}</option>)}</select></label>
-      </section>
-
-
-      <div className="timeline">
-        {lanes.map((lane) => <TimelineLane key={lane.sequence} {...lane} />)}
-      </div>
-    </main>
+      <AppNav pageView={pageView} onPageChange={setPageView} />
+      {pageView === 'home' ? (
+        <HomePage
+          releases={filteredReleases}
+          dataSource={dataSource}
+          syncWarning={syncWarning}
+          query={query}
+          setQuery={setQuery}
+          areaFilter={areaFilter}
+          setAreaFilter={setAreaFilter}
+          productAreas={productAreas}
+          activeRoadmapTab={activeRoadmapTab}
+          setActiveRoadmapTab={setActiveRoadmapTab}
+          expandedReleaseId={expandedReleaseId}
+          toggleRelease={toggleRelease}
+          openRelease={openRelease}
+          onOpenSales={() => setPageView('sales')}
+        />
+      ) : (
+        <SalesEnablementPage />
+      )}
+    </>
   );
 }
